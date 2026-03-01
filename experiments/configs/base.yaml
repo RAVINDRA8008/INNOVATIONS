@@ -1,0 +1,55 @@
+# HYDRA Base Configuration
+# ~125M parameters — default research configuration
+
+vocab_size: 32000
+d_model: 512
+n_layers: 12
+n_heads: 8
+d_ff: 2048
+max_seq_len: 2048
+dropout: 0.1
+layer_norm_eps: 1.0e-06
+
+# SSM Pathway
+ssm_state_dim: 64
+ssm_conv_width: 4
+ssm_expansion_factor: 2
+ssm_dt_rank: auto
+ssm_use_fast_path: true
+
+# Windowed Attention
+window_size: 256
+window_overlap: 64
+
+# Global Attention
+reason_use_flash: true
+reason_use_rotary: true
+
+# Router
+router_hidden_dim: 128
+router_temperature: 1.0
+router_min_temperature: 0.1
+router_aux_loss_weight: 0.01
+router_budget_loss_weight: 0.05
+target_stream_ratio: 0.6
+target_focus_ratio: 0.25
+target_reason_ratio: 0.15
+
+# Cross-Pathway
+cross_pathway_heads: 4
+cross_pathway_dim: 256
+use_cross_pathway_mixing: true
+
+# Training
+learning_rate: 0.0003
+weight_decay: 0.01
+warmup_steps: 2000
+max_steps: 100000
+batch_size: 32
+gradient_clip: 1.0
+
+# Curriculum
+curriculum_enabled: true
+curriculum_warmup_steps: 5000
+curriculum_max_complexity: 1.0
+curriculum_schedule: cosine

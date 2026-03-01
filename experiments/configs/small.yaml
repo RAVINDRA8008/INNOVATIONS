@@ -1,0 +1,55 @@
+# HYDRA Small Configuration
+# ~25M parameters — for debugging and fast iteration
+
+vocab_size: 32000
+d_model: 256
+n_layers: 6
+n_heads: 4
+d_ff: 1024
+max_seq_len: 512
+dropout: 0.1
+layer_norm_eps: 1.0e-06
+
+# SSM Pathway
+ssm_state_dim: 32
+ssm_conv_width: 4
+ssm_expansion_factor: 2
+ssm_dt_rank: auto
+ssm_use_fast_path: true
+
+# Windowed Attention
+window_size: 128
+window_overlap: 32
+
+# Global Attention
+reason_use_flash: true
+reason_use_rotary: true
+
+# Router
+router_hidden_dim: 64
+router_temperature: 1.0
+router_min_temperature: 0.1
+router_aux_loss_weight: 0.01
+router_budget_loss_weight: 0.05
+target_stream_ratio: 0.6
+target_focus_ratio: 0.25
+target_reason_ratio: 0.15
+
+# Cross-Pathway
+cross_pathway_heads: 2
+cross_pathway_dim: 128
+use_cross_pathway_mixing: true
+
+# Training
+learning_rate: 0.0005
+weight_decay: 0.01
+warmup_steps: 500
+max_steps: 10000
+batch_size: 16
+gradient_clip: 1.0
+
+# Curriculum
+curriculum_enabled: true
+curriculum_warmup_steps: 1000
+curriculum_max_complexity: 1.0
+curriculum_schedule: cosine

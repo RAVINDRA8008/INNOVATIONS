@@ -133,14 +133,15 @@ class AdaptiveComputeBudgetLoss(nn.Module):
             probs = F.softmax(logits, dim=-1)
             confidence = probs.max(dim=-1).values  # (B, L)
             
-            # Cost of selected pathway  
-            selected_costs = (routing_weights * self.pathway_costs).sum(dim=-1)  # (B, L)
+            # Cost of selected pathway (ensure same device)
+            pathway_costs = self.pathway_costs.to(routing_weights.device)
+            selected_costs = (routing_weights * pathway_costs).sum(dim=-1)  # (B, L)
             
             # Normalize costs
             if self.cost_normalization == "mean":
-                selected_costs = selected_costs / self.pathway_costs.mean()
+                selected_costs = selected_costs / pathway_costs.mean()
             else:
-                selected_costs = selected_costs / self.pathway_costs.max()
+                selected_costs = selected_costs / pathway_costs.max()
             
             # Efficiency penalty: high cost + low confidence = bad
             uncertainty = 1.0 - confidence

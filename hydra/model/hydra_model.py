@@ -146,36 +146,38 @@ class HydraModel(nn.Module):
     
     def _aggregate_routing_stats(
         self, all_block_info: List[Dict]
-    ) -> Dict[str, float]:
-        """Aggregate routing statistics across all layers."""
-        stats = {
-            "avg_stream_frac": 0.0,
-            "avg_focus_frac": 0.0,
-            "avg_reason_frac": 0.0,
-            "avg_compute_cost": 0.0,
-            "total_aux_loss": 0.0,
-            "per_layer": [],
-        }
+    ) -> Dict[str, object]:
+        """Aggregate routing statistics across all layers.
         
+        Returns 0-dim tensors (not floats) to avoid CUDA synchronization.
+        Call .item() on the values only when you need to log/print them.
+        """
         n_layers = len(all_block_info)
         
-        for info in all_block_info:
-            router_info = info["router_info"]
-            fracs = router_info["soft_fractions"]
-            
-            stats["avg_stream_frac"] += fracs[0].item() / n_layers
-            stats["avg_focus_frac"] += fracs[1].item() / n_layers
-            stats["avg_reason_frac"] += fracs[2].item() / n_layers
-            stats["avg_compute_cost"] += router_info["total_compute_cost"].item() / n_layers
-            stats["total_aux_loss"] += router_info["total_aux_loss"].item()
-            
-            stats["per_layer"].append({
-                "layer": info["layer_idx"],
-                "stream": fracs[0].item(),
-                "focus": fracs[1].item(),
-                "reason": fracs[2].item(),
-                "compute_cost": router_info["total_compute_cost"].item(),
-            })
+        # Vectorized aggregation — single GPU operation, NO .item() calls
+        all_fracs = torch.stack([
+            info["router_info"]["soft_fractions"] for info in all_block_info
+        ])  # (n_layers, 3)
+        avg_fracs = all_fracs.mean(dim=0)  # (3,)
+        
+        all_costs = torch.stack([
+            info["router_info"]["total_compute_cost"] for info in all_block_info
+        ])
+        avg_cost = all_costs.mean()
+        
+        all_aux = torch.stack([
+            info["router_info"]["total_aux_loss"] for info in all_block_info
+        ])
+        total_aux = all_aux.sum()
+        
+        stats = {
+            "avg_stream_frac": avg_fracs[0],   # 0-dim tensor (no CUDA sync)
+            "avg_focus_frac": avg_fracs[1],
+            "avg_reason_frac": avg_fracs[2],
+            "avg_compute_cost": avg_cost,
+            "total_aux_loss": total_aux,
+            "per_layer": [],  # Populated on demand (eval/visualization only)
+        }
         
         return stats
     

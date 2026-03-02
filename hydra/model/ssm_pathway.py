@@ -31,6 +31,34 @@ from einops import rearrange, repeat
 from .config import HydraConfig
 
 
+@torch.jit.script
+def _selective_scan_jit(
+    u: torch.Tensor,      # (B, L, D)
+    delta: torch.Tensor,   # (B, L, D)
+    A: torch.Tensor,       # (D, N)
+    B: torch.Tensor,       # (B, L, N)
+    C: torch.Tensor,       # (B, L, N)
+) -> torch.Tensor:
+    """JIT-compiled selective scan — eliminates Python loop overhead."""
+    batch = u.shape[0]
+    seq_len = u.shape[1]
+    d_inner = u.shape[2]
+
+    # Discretize A and B
+    deltaA = torch.exp(delta.unsqueeze(-1) * A.unsqueeze(0).unsqueeze(0))
+    deltaB_u = delta.unsqueeze(-1) * B.unsqueeze(2) * u.unsqueeze(-1)
+
+    # Pre-allocate output tensor (avoids list append + stack)
+    x = torch.zeros(batch, d_inner, A.shape[1], device=u.device, dtype=u.dtype)
+    ys = torch.empty(batch, seq_len, d_inner, device=u.device, dtype=u.dtype)
+
+    for i in range(seq_len):
+        x = deltaA[:, i] * x + deltaB_u[:, i]
+        ys[:, i] = (x * C[:, i].unsqueeze(1)).sum(dim=-1)
+
+    return ys
+
+
 class SelectiveSSM(nn.Module):
     """
     Selective State Space Model core.
@@ -116,30 +144,12 @@ class SelectiveSSM(nn.Module):
         C: torch.Tensor,     # (B, L, N)
     ) -> torch.Tensor:
         """
-        Sequential selective scan implementation.
+        Selective scan using JIT-compiled kernel.
         
-        For production, this would be replaced with a CUDA kernel (like Mamba's).
-        This pure-PyTorch version is for research clarity.
+        Delegates to _selective_scan_jit which eliminates Python interpreter
+        overhead from the sequential loop (can be 10-50x faster).
         """
-        batch, seq_len, d_inner = u.shape
-        d_state = A.shape[1]
-        
-        # Discretize A and B
-        # deltaA: (B, L, D, N) = exp(delta[:,:,:,None] * A[None,None,:,:])
-        deltaA = torch.exp(delta.unsqueeze(-1) * A.unsqueeze(0).unsqueeze(0))
-        # deltaB_u: (B, L, D, N) = delta[:,:,:,None] * B[:,:,None,:] * u[:,:,:,None]
-        deltaB_u = delta.unsqueeze(-1) * B.unsqueeze(2) * u.unsqueeze(-1)
-        
-        # Sequential scan
-        x = torch.zeros(batch, d_inner, d_state, device=u.device, dtype=u.dtype)
-        ys = []
-        
-        for i in range(seq_len):
-            x = deltaA[:, i] * x + deltaB_u[:, i]
-            y = (x * C[:, i].unsqueeze(1)).sum(dim=-1)  # (B, D)
-            ys.append(y)
-        
-        return torch.stack(ys, dim=1)  # (B, L, D)
+        return _selective_scan_jit(u, delta, A, B, C)
 
 
 class SSMPathway(nn.Module):

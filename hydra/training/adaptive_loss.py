@@ -54,11 +54,8 @@ class AdaptiveComputeBudgetLoss(nn.Module):
         self.confidence_threshold = confidence_threshold
         self.cost_normalization = cost_normalization
         
-        # Pathway costs (normalized)
-        self.register_buffer(
-            "pathway_costs",
-            torch.tensor([1.0, 3.0, 10.0]),
-        )
+        # Pathway costs (relative compute cost of SSM / Windowed / Global)
+        self._pathway_costs_values = [1.0, 3.0, 10.0]
     
     def forward(
         self,
@@ -76,9 +73,16 @@ class AdaptiveComputeBudgetLoss(nn.Module):
         Returns:
             dict with individual and total losses
         """
-        task_loss = model_output.get("loss", torch.tensor(0.0))
-        aux_loss = model_output.get("aux_loss", torch.tensor(0.0))
         block_info = model_output.get("block_info", [])
+        # Determine device from model output tensors
+        if block_info and len(block_info) > 0:
+            _dev = block_info[0]["routing_weights"].device
+        elif "loss" in model_output:
+            _dev = model_output["loss"].device
+        else:
+            _dev = torch.device("cpu")
+        task_loss = model_output.get("loss", torch.tensor(0.0, device=_dev))
+        aux_loss = model_output.get("aux_loss", torch.tensor(0.0, device=_dev))
         
         # Compute efficiency loss
         efficiency_loss = self._compute_efficiency_loss(block_info)
@@ -123,6 +127,7 @@ class AdaptiveComputeBudgetLoss(nn.Module):
             return torch.tensor(0.0)
         
         device = block_info[0]["routing_weights"].device
+        pathway_costs = torch.tensor(self._pathway_costs_values, device=device)
         total_eff_loss = torch.tensor(0.0, device=device)
         
         for info in block_info:
@@ -133,8 +138,7 @@ class AdaptiveComputeBudgetLoss(nn.Module):
             probs = F.softmax(logits, dim=-1)
             confidence = probs.max(dim=-1).values  # (B, L)
             
-            # Cost of selected pathway (ensure same device)
-            pathway_costs = self.pathway_costs.to(routing_weights.device)
+            # Cost of selected pathway
             selected_costs = (routing_weights * pathway_costs).sum(dim=-1)  # (B, L)
             
             # Normalize costs
